@@ -46,7 +46,7 @@
             <h2>Source</h2>
             <a href="https://github.com/kujix2z/Port-Scan">Lien vers le repo GitHub</a>
             <h2>Ce qui change</h2>
-            <p>Le fonctionnement (compteur partagé, mutex, timeout de 200 ms) est celui de la <a class="text-link" href="portscan-v2.html">version 2</a>. Seule la gestion des threads évolue.</p>
+            <p>Le fonctionnement (compteur partagé, mutex, timeout de 200 ms) est celui de la <a class="text-link" href="portscan-v2.html">version 2</a>. Seule la gestion des threads évolue : figer le nombre de threads à 5 dans le code m'obligeait à recompiler à chaque fois, ce qui n'était pas pratique en CTF.</p>
             <ul class="steps">
                 <li><strong>Nombre de threads en argument.</strong> Le programme prend l'IP et le nombre de threads. <code class="inline">atoi</code> convertit ce second argument, qui est du texte, en entier.</li>
                 <li><strong>Tableau de threads dynamique.</strong> <code class="inline">malloc</code> réserve autant de <code class="inline">pthread_t</code> que demandé, une boucle crée les threads et une autre les attend, puis <code class="inline">free</code> libère le tableau. Cela remplace les 5 variables copiées-collées de la v2.</li>

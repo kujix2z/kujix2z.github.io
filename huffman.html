@@ -36,6 +36,19 @@
         </header>
 
         <section class="doc-section">
+            <h2>Pourquoi ce projet</h2>
+            <p>Je voulais m'entraîner à la manipulation de bits et reprendre un peu de Python avant la rentrée à Télécom Nancy. J'ai repris un algorithme que je connaissais déjà de prépa, pour me concentrer sur l'implémentation plutôt que sur la théorie.</p>
+        </section>
+        <section class="doc-section">
+            <h2>Cas limites & Débogage</h2>
+            <p>Tester l'algorithme sur des cas extrêmes a révélé des bugs intéressants que j'ai dû corriger pour rendre l'outil robuste :</p>
+            <ol class="steps">
+                <li><strong>Le fichier vide :</strong> Tenter de compresser un fichier sans contenu faisait planter la construction de l'arbre (impossible de dépiler deux nœuds d'un tas vide). Il a fallu ajouter une condition de garde pour court-circuiter la génération et traiter ce cas proprement.</li>
+                <li><strong>Le fichier à caractère unique :</strong> Si un fichier contient des milliers de "A" identiques, l'arbre de Huffman se réduit à une seule racine sans branches. Lors du parcours, le programme ne générait donc aucun code binaire. J'ai corrigé cela en forçant l'attribution du code <code class="inline">"0"</code> si l'arbre n'a qu'une seule feuille.</li>
+            </ol>
+        </section>
+
+        <section class="doc-section">
             <h2>Source</h2>
             <a href="https://github.com/kujix2z/Compressor_Huffman">Lien vers le repo GitHub</a>
             <h2>Principe</h2>

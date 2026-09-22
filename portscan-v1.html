@@ -42,6 +42,16 @@
         </header>
 
         <section class="doc-section">
+            <h2>Pourquoi ce projet</h2>
+            <p>En CTF, j'ai remarqué que <code class="inline">nmap</code> devenait lent dès qu'on lui demande de scanner beaucoup de ports. L'idée : un scanner volontairement basique mais rapide, pour dégrossir la liste des ports ouverts et alléger le travail de <code class="inline">nmap</code> en amont, avant de le lancer pour une analyse plus fine sur les ports qui le méritent.</p>
+        </section>
+        <section class="doc-section">
+            <h2>Débogage : Le port fantôme</h2>
+            <p>En testant rigoureusement le programme avec un serveur d'écoute placé sur le port 10000, je me suis rendu compte que mes versions ultérieures (v2 et v3) le détectaient, mais que cette v1 passait complètement à côté. Le diagnostic a révélé un grand classique du C : une erreur d'indexation (<em>off-by-one error</em>).</p>
+            <p>Le tableau <code class="inline">ports</code> était alloué correctement, mais la boucle de remplissage allait de 1 à 9999. L'indice 0 n'était jamais initialisé, et le port 10000 n'était jamais stocké. Le correctif a tenu en une ligne lors de l'initialisation du tableau : <code class="inline">ports[i] = i + 1;</code> (avec <code class="inline">i</code> allant de 0 à 9999). Un rappel parfait de l'importance des tests unitaires sur les bornes !</p>
+        </section>
+
+        <section class="doc-section">
             <h2>Source</h2>
             <a href="https://github.com/kujix2z/Port-Scan">Lien vers le repo GitHub</a>
             <h2>Principe</h2>
@@ -138,8 +148,8 @@ int main(){
     char ip_cible[20];
     scanf("%19s", ip_cible);
     int* ports = malloc(sizeof(int)*10001);
-    for(int i = 1; i &lt; 10000; i++){
-        ports[i] = i;
+    for(int i = 0; i &lt; 10000; i++){
+        ports[i] = i+1;
     }
     int n_port = 10000;
     struct sockaddr_in configuration_serveur;
