@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0b0912">
+    <meta name="description" content="Scanneur de ports TCP en C : le nombre de threads est choisi en ligne de commande.">
+    <title>Scanneur de port v3 : multithread | Portfolio : Kuji</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="bg-glow"></div>
+
+    <nav>
+        <div class="nav-content">
+            <a class="logo" href="index.html">Kuji<span class="us">_</span></a>
+            <div class="links">
+                <a href="index.html">Accueil</a>
+                <a href="index.html#projets">Projets</a>
+                <a href="index.html#contact">Contact</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="project-page">
+
+        <header class="page-head">
+            <p class="line"><span class="prompt">kuji@portfolio<span class="sep">:~/projets$</span></span> <span class="cmd">cat portscan-v3.md<span class="cursor" aria-hidden="true"></span></span></p>
+            <h1>Scanneur de port, v3 : multithread</h1>
+            <p class="lead">Le nombre de threads devient un paramètre de la ligne de commande, pour adapter le scan à la machine et au réseau.</p>
+            <div class="tags">
+                <span class="tag">C</span>
+                <span class="tag">Réseau</span>
+                <span class="tag">Threads</span>
+            </div>
+            <nav class="versions" aria-label="Versions du scanneur de port">
+                <span class="versions-label">Versions</span>
+                <a href="portscan-v1.html">v1 séquentiel</a>
+                <a href="portscan-v2.html">v2 5 threads</a>
+                <a href="portscan-v3.html" aria-current="page">v3 multithread</a>
+            </nav>
+        </header>
+
+        <section class="doc-section">
+            <h2>Source</h2>
+            <a href="https://github.com/kujix2z/Port-Scan">Lien vers le repo GitHub</a>
+            <h2>Ce qui change</h2>
+            <p>Le fonctionnement (compteur partagé, mutex, timeout de 200 ms) est celui de la <a class="text-link" href="portscan-v2.html">version 2</a>. Seule la gestion des threads évolue.</p>
+            <ul class="steps">
+                <li><strong>Nombre de threads en argument.</strong> Le programme prend l'IP et le nombre de threads. <code class="inline">atoi</code> convertit ce second argument, qui est du texte, en entier.</li>
+                <li><strong>Tableau de threads dynamique.</strong> <code class="inline">malloc</code> réserve autant de <code class="inline">pthread_t</code> que demandé, une boucle crée les threads et une autre les attend, puis <code class="inline">free</code> libère le tableau. Cela remplace les 5 variables copiées-collées de la v2.</li>
+                <li><strong>Une seule structure d'arguments.</strong> Tous les threads reçoivent la même <code class="inline">shared_args</code>, qui ne contient que l'adresse IP et un pointeur vers le mutex. Rien n'y est modifié, donc la partager est sans risque, alors que la v2 en créait cinq copies identiques.</li>
+            </ul>
+        </section>
+
+        <section class="doc-section">
+            <h2>Utilisation</h2>
+            <pre class="snippet"><code><span class="sn-p">$</span> gcc mapping_network_multithread.c -o mapping_network_multithread -pthread
+<span class="sn-p">$</span> ./mapping_network_multithread 127.0.0.1 20 | grep -e SCAN -e OPENED
+BEGINNING IP SCAN : 127.0.0.1 with 20 threads
+[+] PORT 8080 : OPENED
+[+] PORT 9000 : OPENED
+SCAN FINISHED.</code></pre>
+            <p class="caption">Ici, 20 threads scannent les ports de 1 à 10 000. Le filtre <code class="inline">grep</code> ne garde que les ports ouverts et les lignes de début et de fin.</p>
+        </section>
+
+        <section class="doc-section">
+            <h2>Limites</h2>
+            <ul class="steps">
+                <li>Le nombre de threads n'est pas vérifié. Avec <code class="inline">abc</code> ou <code class="inline">0</code>, <code class="inline">atoi</code> renvoie 0 : aucun thread n'est lancé, et le programme affiche « SCAN FINISHED » sans avoir rien scanné.</li>
+                <li>Augmenter les threads n'accélère pas indéfiniment. <code class="inline">select()</code> ne sait surveiller que des descripteurs inférieurs à 1024 (<code class="inline">FD_SETSIZE</code>), et la limite de fichiers ouverts par processus est souvent de 1024 aussi. Au-delà d'un millier de threads, il faudrait passer à <code class="inline">poll()</code> ou <code class="inline">epoll()</code>.</li>
+            </ul>
+        </section>
+
+        <section class="doc-section">
+            <h2>Code source</h2>
+            <div class="code-window">
+                <div class="code-bar">
+                    <span class="code-file">mapping_network_multithread.c</span>
+                    <button class="copy-btn" id="copy" type="button" aria-live="polite">Copier</button>
+                </div>
+                <pre><code id="src" data-lang="c">#include &lt;stdlib.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;sys/socket.h&gt;
+#include &lt;arpa/inet.h&gt;
+#include &lt;sys/time.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;pthread.h&gt;
+
+
+struct ScanArgs_Mutex{ char* ip_to_scan; pthread_mutex_t* mut;};
+
+int last_port = 10000;
+int first_port = 1;
+
+int connect_with_timeout(int s, struct sockaddr_in* addr, int timeout_sec){
+
+    int flags = fcntl(s, F_GETFL, 0);
+    fcntl(s, F_SETFL, flags | O_NONBLOCK);
+
+    int res = connect(s, (struct sockaddr*)addr, sizeof(*addr));
+    if (res &lt; 0 &amp;&amp; errno != EINPROGRESS){
+        return -1;
+    }
+
+    if (res == 0){
+        fcntl(s, F_SETFL, flags);
+        return 0;
+    }
+
+    fd_set fdset;
+    FD_ZERO(&amp;fdset);
+    FD_SET(s, &amp;fdset);
+
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = timeout_sec;
+
+    res = select(s + 1, NULL, &amp;fdset, NULL, &amp;tv);
+
+    fcntl(s, F_SETFL, flags);
+
+    if (res &lt;= 0){
+        return -1;
+    }
+    int so_error;
+    socklen_t len = sizeof(so_error);
+    getsockopt(s, SOL_SOCKET, SO_ERROR, &amp;so_error, &amp;len);
+    if (so_error != 0){
+        return -1;
+    }
+
+    return 0;
+}
+
+
+void* thread_scan(void* arg_g){
+    struct ScanArgs_Mutex* args = (struct ScanArgs_Mutex*) arg_g;
+    struct sockaddr_in configuration_serveur;
+
+    while(1){
+        pthread_mutex_lock(args-&gt;mut);
+        if (first_port &gt; last_port){
+            pthread_mutex_unlock(args-&gt;mut);
+            break;
+
+        }
+        int port_to_scan = first_port;
+        first_port++;
+        pthread_mutex_unlock(args-&gt;mut);
+
+        int s = socket(AF_INET, SOCK_STREAM, 0);
+        if(s &lt; 0){
+            printf("Error while creating socket. Port %d\n", port_to_scan);
+            continue;
+        }
+
+        memset(&amp;configuration_serveur, 0, sizeof(configuration_serveur));
+        configuration_serveur.sin_addr.s_addr = inet_addr(args-&gt;ip_to_scan);
+        configuration_serveur.sin_family = AF_INET;
+        configuration_serveur.sin_port = htons(port_to_scan);
+
+        if (connect_with_timeout(s, &amp;configuration_serveur, 200000) == 0){
+            printf("[+] PORT %d : OPENED\n", port_to_scan);
+        }
+        else{
+           printf("[+] PORT %d CLOSED\n", port_to_scan);
+        }
+
+        close(s);
+    }
+    return NULL;
+}
+
+
+int main(int argc, char* argv[]){
+    if (argc != 3) {
+        printf("Usage: %s &lt;IP_Address&gt; &lt;Nb_Threads&gt;\n", argv[0]);
+        return 1;
+    }
+    char* ip_cible = argv[1];
+    int nb_threads = atoi(argv[2]); //(texte -&gt; int)
+
+    printf("BEGINNING IP SCAN : %s with %d threads\n", ip_cible, nb_threads);
+    printf("--------------------------\n");
+
+    pthread_mutex_t mut;
+    pthread_mutex_init(&amp;mut, NULL);
+    struct ScanArgs_Mutex shared_args = {ip_cible, &amp;mut};
+    pthread_t* threads = malloc(sizeof(pthread_t) * nb_threads);
+    for(int i = 0; i &lt; nb_threads; i++){
+        pthread_create(&amp;threads[i], NULL, thread_scan, &amp;shared_args);
+    }
+    for (int i = 0; i &lt; nb_threads; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+
+    printf("--------------------------\n");
+    printf("SCAN FINISHED.\n");
+    free(threads);
+    pthread_mutex_destroy(&amp;mut);
+    return 0;
+}</code></pre>
+            </div>
+        </section>
+
+        <nav class="pager" aria-label="Navigation entre les versions">
+            <a href="portscan-v2.html"><span class="pager-dir">Version précédente</span>v2 5 threads</a>
+        </nav>
+
+    </main>
+
+    <script src="highlight.js"></script>
+</body>
+</html>

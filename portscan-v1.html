@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0b0912">
+    <meta name="description" content="Scanneur de ports TCP en C : première version séquentielle, avec connexions non bloquantes et timeout.">
+    <title>Scanneur de port v1 : séquentiel | Portfolio : Kuji</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="bg-glow"></div>
+
+    <nav>
+        <div class="nav-content">
+            <a class="logo" href="index.html">Kuji<span class="us">_</span></a>
+            <div class="links">
+                <a href="index.html">Accueil</a>
+                <a href="index.html#projets">Projets</a>
+                <a href="index.html#contact">Contact</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="project-page">
+
+        <header class="page-head">
+            <p class="line"><span class="prompt">kuji@portfolio<span class="sep">:~/projets$</span></span> <span class="cmd">cat portscan-v1.md<span class="cursor" aria-hidden="true"></span></span></p>
+            <h1>Scanneur de port, v1 : séquentiel</h1>
+            <p class="lead">Première version : un scanner TCP en C qui teste les ports un par un, avec des connexions non bloquantes et un timeout.</p>
+            <div class="tags">
+                <span class="tag">C</span>
+                <span class="tag">Réseau</span>
+            </div>
+            <nav class="versions" aria-label="Versions du scanneur de port">
+                <span class="versions-label">Versions</span>
+                <a href="portscan-v1.html" aria-current="page">v1 séquentiel</a>
+                <a href="portscan-v2.html">v2 5 threads</a>
+                <a href="portscan-v3.html">v3 multithread</a>
+            </nav>
+        </header>
+
+        <section class="doc-section">
+            <h2>Source</h2>
+            <a href="https://github.com/kujix2z/Port-Scan">Lien vers le repo GitHub</a>
+            <h2>Principe</h2>
+            <p>Le programme demande une adresse IP, puis tente d'ouvrir une connexion TCP vers chaque port, l'un après l'autre. Si la connexion aboutit, le port est ouvert : un service écoute derrière.</p>
+            <ol class="steps">
+                <li><strong>Préparation.</strong> L'adresse IP est lue avec <code class="inline">scanf</code>, et un tableau <code class="inline">ports</code> contient les numéros à tester.</li>
+                <li><strong>Une socket par port.</strong> <code class="inline">socket()</code> crée une socket TCP, et une structure <code class="inline">sockaddr_in</code> reçoit l'adresse (<code class="inline">inet_addr</code>) et le port (<code class="inline">htons</code>).</li>
+                <li><strong>Connexion avec timeout.</strong> <code class="inline">connect_with_timeout</code> passe la socket en mode non bloquant et lance <code class="inline">connect()</code>, qui rend la main aussitôt (<code class="inline">EINPROGRESS</code>). <code class="inline">select()</code> attend ensuite que la socket soit prête, ou que les 2 secondes soient écoulées.</li>
+                <li><strong>Verdict.</strong> <code class="inline">getsockopt</code> avec <code class="inline">SO_ERROR</code> donne le résultat de la connexion : 0 si elle a réussi, un code d'erreur sinon. Un port ouvert est affiché, puis la socket est fermée.</li>
+            </ol>
+            <p>Le mode non bloquant est la clé. Un <code class="inline">connect()</code> classique sur un port filtré par un pare-feu peut rester bloqué très longtemps, car l'expiration par défaut du système se compte en minutes. Avec <code class="inline">select()</code>, c'est le programme qui fixe sa limite d'attente. Trois cas sont possibles : le port est ouvert (la connexion aboutit), fermé (la machine refuse la connexion, et <code class="inline">SO_ERROR</code> contient l'erreur), ou filtré (aucune réponse, et c'est le timeout qui tranche).</p>
+        </section>
+
+        <section class="doc-section">
+            <h2>Utilisation</h2>
+            <pre class="snippet"><code><span class="sn-p">$</span> gcc mapping_network.c -o mapping_network
+<span class="sn-p">$</span> ./mapping_network
+IP Address to scan :127.0.0.1
+BEGINNING IP SCAN : 127.0.0.1
+--------------------------
+[+] PORT 8080 : OPENED
+[+] PORT 9000 : OPENED
+--------------------------
+SCAN FINISHED.</code></pre>
+            <p class="caption">Exemple avec deux serveurs locaux, sur les ports 8080 et 9000. Dans cette version, seuls les ports ouverts sont affichés.</p>
+        </section>
+
+        <section class="doc-section">
+            <h2>Limites</h2>
+            <p>Le scan est séquentiel : le programme attend la réponse d'un port avant de passer au suivant. Un port filtré coûte jusqu'à 2 secondes, soit plus de 5 heures dans le pire des cas pour 10 000 ports (10 000 × 2 s). Presque tout ce temps est passé à attendre le réseau et non à calculer, ce qui rend le problème idéal à paralléliser. C'est l'objet de la <a class="text-link" href="portscan-v2.html">version 2</a>.</p>
+        </section>
+
+        <section class="doc-section">
+            <h2>Code source</h2>
+            <div class="code-window">
+                <div class="code-bar">
+                    <span class="code-file">mapping_network.c</span>
+                    <button class="copy-btn" id="copy" type="button" aria-live="polite">Copier</button>
+                </div>
+                <pre><code id="src" data-lang="c">#include &lt;stdlib.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;sys/socket.h&gt;
+#include &lt;arpa/inet.h&gt;
+#include &lt;sys/time.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;pthread.h&gt;
+
+int connect_with_timeout(int s, struct sockaddr_in* addr, int timeout_sec){
+    int flags = fcntl(s, F_GETFL, 0);
+    fcntl(s, F_SETFL, flags | O_NONBLOCK);
+
+    int res = connect(s, (struct sockaddr*)addr, sizeof(*addr));
+    if (res &lt; 0 &amp;&amp; errno != EINPROGRESS){
+        return -1;
+    }
+
+    if (res == 0){
+        fcntl(s, F_SETFL, flags);
+        return 0;
+    }
+
+    fd_set fdset;
+    FD_ZERO(&amp;fdset);
+    FD_SET(s, &amp;fdset);
+
+    struct timeval tv;
+    tv.tv_sec = timeout_sec;
+    tv.tv_usec = 0;
+
+    res = select(s + 1, NULL, &amp;fdset, NULL, &amp;tv);
+
+    fcntl(s, F_SETFL, flags);
+
+    if (res &lt;= 0){
+        return -1;
+    }
+    int so_error;
+    socklen_t len = sizeof(so_error);
+    getsockopt(s, SOL_SOCKET, SO_ERROR, &amp;so_error, &amp;len);
+    if (so_error != 0){
+        return -1;
+    }
+
+    return 0;
+}
+
+int main(){
+    printf("IP Address to scan :");
+    char ip_cible[20];
+    scanf("%19s", ip_cible);
+    int* ports = malloc(sizeof(int)*10001);
+    for(int i = 1; i &lt; 10000; i++){
+        ports[i] = i;
+    }
+    int n_port = 10000;
+    struct sockaddr_in configuration_serveur;
+
+    printf("BEGINNING IP SCAN : %s\n", ip_cible);
+    printf("--------------------------\n");
+    for(int i = 0; i &lt; n_port; i++){
+        int current_port = ports[i];
+
+        int s = socket(AF_INET, SOCK_STREAM, 0);
+        if(s &lt; 0){
+            printf("Error while creating socket. Port %d\n", current_port);
+            continue;
+        }
+
+        memset(&amp;configuration_serveur, 0, sizeof(configuration_serveur));
+        configuration_serveur.sin_addr.s_addr = inet_addr(ip_cible);
+        configuration_serveur.sin_family = AF_INET;
+        configuration_serveur.sin_port = htons(current_port);
+
+        if (connect_with_timeout(s, &amp;configuration_serveur, 2) == 0){
+            printf("[+] PORT %d : OPENED\n", current_port);
+        }
+        else{
+
+        }
+
+        close(s);
+    }
+
+    printf("--------------------------\n");
+    printf("SCAN FINISHED.\n");
+    free(ports);
+    return 0;
+}</code></pre>
+            </div>
+        </section>
+
+        <nav class="pager" aria-label="Navigation entre les versions">
+            <a class="next" href="portscan-v2.html"><span class="pager-dir">Version suivante</span>v2 5 threads</a>
+        </nav>
+
+    </main>
+
+    <script src="highlight.js"></script>
+</body>
+</html>

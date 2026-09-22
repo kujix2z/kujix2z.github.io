@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0b0912">
+    <meta name="description" content="Scanneur de ports TCP en C : cinq threads se partagent les ports grâce à un mutex.">
+    <title>Scanneur de port v2 : 5 threads | Portfolio : Kuji</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="bg-glow"></div>
+
+    <nav>
+        <div class="nav-content">
+            <a class="logo" href="index.html">Kuji<span class="us">_</span></a>
+            <div class="links">
+                <a href="index.html">Accueil</a>
+                <a href="index.html#projets">Projets</a>
+                <a href="index.html#contact">Contact</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="project-page">
+
+        <header class="page-head">
+            <p class="line"><span class="prompt">kuji@portfolio<span class="sep">:~/projets$</span></span> <span class="cmd">cat portscan-v2.md<span class="cursor" aria-hidden="true"></span></span></p>
+            <h1>Scanneur de port, v2 : 5 threads</h1>
+            <p class="lead">Le scan est réparti sur 5 threads qui se partagent les ports grâce à un mutex, et l'attente par port passe de 2 secondes à 200 ms.</p>
+            <div class="tags">
+                <span class="tag">C</span>
+                <span class="tag">Réseau</span>
+                <span class="tag">Threads</span>
+            </div>
+            <nav class="versions" aria-label="Versions du scanneur de port">
+                <span class="versions-label">Versions</span>
+                <a href="portscan-v1.html">v1 séquentiel</a>
+                <a href="portscan-v2.html" aria-current="page">v2 5 threads</a>
+                <a href="portscan-v3.html">v3 multithread</a>
+            </nav>
+        </header>
+
+        <section class="doc-section">
+            <h2>Source</h2>
+            <a href="https://github.com/kujix2z/Port-Scan">Lien vers le repo GitHub</a>
+            <h2>Ce qui change</h2>
+            <p>La technique de connexion (<code class="inline">connect_with_timeout</code>) reste celle de la <a class="text-link" href="portscan-v1.html">version 1</a>. Ce qui change, c'est la façon de répartir le travail.</p>
+            <ul class="steps">
+                <li><strong>Cinq threads.</strong> <code class="inline">thread_scan</code> est exécutée par 5 threads POSIX (<code class="inline">pthread_create</code>), et le <code class="inline">main</code> les attend tous avec <code class="inline">pthread_join</code>.</li>
+                <li><strong>Un compteur partagé.</strong> Chaque thread prend le port suivant dans la variable globale <code class="inline">first_port</code>, de 1 à 10 000. Un thread bloqué sur un port lent ne retarde pas les autres, qui continuent d'avancer : la charge se répartit d'elle-même, sans découper les ports à l'avance.</li>
+                <li><strong>Un mutex autour du compteur.</strong> Lire puis incrémenter <code class="inline">first_port</code> n'est pas atomique : sans verrou, deux threads pourraient lire la même valeur et scanner le même port. Le mutex est relâché avant le scan, pour ne pas bloquer les autres pendant l'attente réseau. Le reste (socket, <code class="inline">sockaddr_in</code>) est local à chaque thread, donc sans risque.</li>
+                <li><strong>Timeout de 200 ms.</strong> <code class="inline">select</code> reçoit désormais <code class="inline">tv_sec = 0</code> et <code class="inline">tv_usec = 200000</code>, au lieu de 2 secondes.</li>
+                <li><strong>Adresse IP en argument.</strong> L'IP se passe en ligne de commande (<code class="inline">argv</code>) plutôt qu'avec <code class="inline">scanf</code>, ce qui permet d'automatiser le scan.</li>
+                <li><strong>Ports fermés affichés.</strong> Chaque port produit une ligne <code class="inline">OPENED</code> ou <code class="inline">CLOSED</code>. Les threads écrivant en parallèle, l'ordre des lignes varie d'une exécution à l'autre.</li>
+            </ul>
+        </section>
+
+        <section class="doc-section">
+            <h2>Utilisation</h2>
+            <pre class="snippet"><code><span class="sn-p">$</span> gcc mapping_network_5threads.c -o mapping_network_5threads -pthread
+<span class="sn-p">$</span> ./mapping_network_5threads 127.0.0.1 | grep OPENED
+[+] PORT 8080 : OPENED
+[+] PORT 9000 : OPENED</code></pre>
+            <p class="caption">Sans <code class="inline">grep</code>, le programme affiche une ligne par port, soit 10 000 lignes. L'ordre des résultats peut varier d'une exécution à l'autre.</p>
+        </section>
+
+        <section class="doc-section">
+            <h2>Limites</h2>
+            <ul class="steps">
+                <li>Le nombre de threads est fixé à 5 dans le code : <code class="inline">thread1</code> à <code class="inline">thread5</code> et <code class="inline">args1</code> à <code class="inline">args5</code> sont copiés-collés. En changer impose de modifier le code et de recompiler. C'est ce que corrige la <a class="text-link" href="portscan-v3.html">version 3</a>.</li>
+                <li>200 ms suffisent en local ou sur un réseau rapide, mais un port ouvert sur une machine lointaine, à forte latence, peut être classé « CLOSED » à tort. Le programme ne distingue pas non plus un port fermé d'un port filtré.</li>
+            </ul>
+        </section>
+
+        <section class="doc-section">
+            <h2>Code source</h2>
+            <div class="code-window">
+                <div class="code-bar">
+                    <span class="code-file">mapping_network_5threads.c</span>
+                    <button class="copy-btn" id="copy" type="button" aria-live="polite">Copier</button>
+                </div>
+                <pre><code id="src" data-lang="c">#include &lt;stdlib.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;string.h&gt;
+#include &lt;pthread.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;sys/socket.h&gt;
+#include &lt;arpa/inet.h&gt;
+#include &lt;sys/time.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;pthread.h&gt;
+
+
+struct ScanArgs_Mutex{ char* ip_to_scan; pthread_mutex_t* mut;};
+
+int last_port = 10000;
+int first_port = 1;
+
+int connect_with_timeout(int s, struct sockaddr_in* addr, int timeout_sec){
+    int flags = fcntl(s, F_GETFL, 0);
+    fcntl(s, F_SETFL, flags | O_NONBLOCK);
+
+    int res = connect(s, (struct sockaddr*)addr, sizeof(*addr));
+    if (res &lt; 0 &amp;&amp; errno != EINPROGRESS){
+        return -1;
+    }
+
+    if (res == 0){
+        fcntl(s, F_SETFL, flags);
+        return 0;
+    }
+
+    fd_set fdset;
+    FD_ZERO(&amp;fdset);
+    FD_SET(s, &amp;fdset);
+
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = timeout_sec;
+
+    res = select(s + 1, NULL, &amp;fdset, NULL, &amp;tv);
+
+    fcntl(s, F_SETFL, flags);
+
+    if (res &lt;= 0){
+        return -1;
+    }
+    int so_error;
+    socklen_t len = sizeof(so_error);
+    getsockopt(s, SOL_SOCKET, SO_ERROR, &amp;so_error, &amp;len);
+    if (so_error != 0){
+        return -1;
+    }
+
+    return 0;
+}
+
+
+void* thread_scan(void* arg_g){
+    struct ScanArgs_Mutex* args = (struct ScanArgs_Mutex*) arg_g;
+    struct sockaddr_in configuration_serveur;
+
+    while(1){
+        pthread_mutex_lock(args-&gt;mut);
+        if (first_port &gt; last_port){
+            pthread_mutex_unlock(args-&gt;mut);
+            break;
+
+        }
+        int port_to_scan = first_port;
+        first_port++;
+        pthread_mutex_unlock(args-&gt;mut);
+
+        int s = socket(AF_INET, SOCK_STREAM, 0);
+        if(s &lt; 0){
+            printf("Error while creating socket. Port %d\n", port_to_scan);
+            continue;
+        }
+
+        memset(&amp;configuration_serveur, 0, sizeof(configuration_serveur));
+        configuration_serveur.sin_addr.s_addr = inet_addr(args-&gt;ip_to_scan);
+        configuration_serveur.sin_family = AF_INET;
+        configuration_serveur.sin_port = htons(port_to_scan);
+
+        if (connect_with_timeout(s, &amp;configuration_serveur, 200000) == 0){
+            printf("[+] PORT %d : OPENED\n", port_to_scan);
+        }
+        else{
+           printf("[+] PORT %d CLOSED\n", port_to_scan);
+        }
+
+        close(s);
+    }
+    return NULL;
+}
+
+
+int main(int argc, char* argv[]){
+    if (argc != 2) {
+        printf("Usage: %s &lt;IP_Address&gt;\n", argv[0]);
+        return 1;
+    }
+    char* ip_cible = argv[1];
+
+    printf("BEGINNING IP SCAN : %s\n", ip_cible);
+    printf("--------------------------\n");
+
+    pthread_mutex_t mut;
+    pthread_mutex_init(&amp;mut, NULL);
+    struct ScanArgs_Mutex args1 = {ip_cible, &amp;mut};
+    struct ScanArgs_Mutex args2 = {ip_cible, &amp;mut};
+    struct ScanArgs_Mutex args3 = {ip_cible, &amp;mut};
+    struct ScanArgs_Mutex args4 = {ip_cible, &amp;mut};
+    struct ScanArgs_Mutex args5 = {ip_cible, &amp;mut};
+    pthread_t thread1;
+    pthread_t thread2;
+    pthread_t thread3;
+    pthread_t thread4;
+    pthread_t thread5;
+    pthread_create(&amp;thread1, NULL, thread_scan, &amp;args1);
+    pthread_create(&amp;thread2, NULL, thread_scan, &amp;args2);
+    pthread_create(&amp;thread3, NULL, thread_scan, &amp;args3);
+    pthread_create(&amp;thread4, NULL, thread_scan, &amp;args4);
+    pthread_create(&amp;thread5, NULL, thread_scan, &amp;args5);
+
+    pthread_join(thread1, NULL);
+    pthread_join(thread2, NULL);
+    pthread_join(thread3, NULL);
+    pthread_join(thread4, NULL);
+    pthread_join(thread5, NULL);
+
+
+    printf("--------------------------\n");
+    printf("SCAN FINISHED.\n");
+    pthread_mutex_destroy(&amp;mut);
+    return 0;
+}</code></pre>
+            </div>
+        </section>
+
+        <nav class="pager" aria-label="Navigation entre les versions">
+            <a href="portscan-v1.html"><span class="pager-dir">Version précédente</span>v1 séquentiel</a>
+            <a class="next" href="portscan-v3.html"><span class="pager-dir">Version suivante</span>v3 multithread</a>
+        </nav>
+
+    </main>
+
+    <script src="highlight.js"></script>
+</body>
+</html>

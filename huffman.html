@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0b0912">
+    <meta name="description" content="Compresseur/décompresseur sans perte en Python basé sur l'algorithme de Huffman.">
+    <title>Compresseur Huffman | Portfolio : Kuji</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="bg-glow"></div>
+
+    <nav>
+        <div class="nav-content">
+            <a class="logo" href="index.html">Kuji<span class="us">_</span></a>
+            <div class="links">
+                <a href="index.html">Accueil</a>
+                <a href="index.html#projets">Projets</a>
+                <a href="index.html#contact">Contact</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="project-page">
+
+        <header class="page-head">
+            <p class="line"><span class="prompt">kuji@portfolio<span class="sep">:~/projets$</span></span> <span class="cmd">cat huffman.md<span class="cursor" aria-hidden="true"></span></span></p>
+            <h1>Compresseur avec algorithme de Huffman</h1>
+            <p class="lead">Outil de compression/décompression sans perte en Python, basé sur les arbres binaires et la manipulation de bits.</p>
+            <div class="tags">
+                <span class="tag">Python</span>
+                <span class="tag">Algorithmique</span>
+            </div>
+        </header>
+
+        <section class="doc-section">
+            <h2>Source</h2>
+            <a href="https://github.com/kujix2z/Compressor_Huffman">Lien vers le repo GitHub</a>
+            <h2>Principe</h2>
+            <p>L'algorithme de Huffman attribue à chaque octet un code binaire dont la longueur dépend de sa fréquence : un octet très présent reçoit un code court, un octet rare un code long. Aucun code n'étant le préfixe d'un autre, le décodage est sans ambiguïté et le fichier est restitué à l'identique.</p>
+            <ol class="steps">
+                <li><strong>Comptage.</strong> <code class="inline">count_occ</code> compte les occurrences de chaque octet du fichier.</li>
+                <li><strong>Construction de l'arbre.</strong> Chaque octet devient une feuille placée dans un tas-min (<code class="inline">heapq</code>). On retire les deux nœuds les plus rares, on les fusionne sous un parent dont la fréquence est la somme des deux, puis on le remet dans le tas. On répète jusqu'à n'avoir plus que la racine.</li>
+                <li><strong>Génération des codes.</strong> <code class="inline">dfs_binary</code> parcourt l'arbre : 0 pour aller à gauche, 1 pour aller à droite. Le chemin menant à une feuille est le code de son octet. Si le fichier ne contient qu'un seul octet distinct, l'arbre se réduit à une feuille et reçoit le code <code class="inline">0</code>.</li>
+                <li><strong>Écriture des bits.</strong> Les codes sont mis bout à bout puis regroupés par paquets de 8 grâce aux décalages <code class="inline">&lt;&lt;</code> et au OU binaire <code class="inline">|</code>. Le dernier octet est complété par des zéros, et leur nombre est mémorisé (le padding).</li>
+            </ol>
+        </section>
+
+        <section class="doc-section">
+            <h2>Format du fichier .huff</h2>
+            <p>La première ligne contient la table des codes au format JSON, avec en plus le nombre de bits de padding. Les octets compressés suivent après le saut de ligne. Les clés sont les valeurs des octets en décimal.</p>
+            <pre class="snippet"><code>{"97": "0", "98": "10", "99": "11", "_PADDING_": 5}
+[octets compressés]</code></pre>
+            <p class="caption">Exemple avec a = 97, b = 98 et c = 99.</p>
+            <p>À la décompression, <code class="inline">decompress</code> lit cette ligne, inverse la table (code vers octet), reconvertit chaque octet en 8 bits, retire le padding, puis lit les bits un par un jusqu'à reconnaître un code.</p>
+        </section>
+
+        <section class="doc-section">
+            <h2>Utilisation</h2>
+            <pre class="snippet"><code><span class="sn-p">$</span> python3 compress.py c mon_fichier.txt
+<span class="sn-c"># crée mon_fichier.txt.huff</span>
+<span class="sn-p">$</span> python3 compress.py d mon_fichier.txt.huff
+<span class="sn-c"># crée mon_fichier.txt_restaure</span></code></pre>
+        </section>
+
+        <section class="doc-section">
+            <h2>Code source</h2>
+            <div class="code-window">
+                <div class="code-bar">
+                    <span class="code-file">compress.py</span>
+                    <button class="copy-btn" id="copy" type="button" aria-live="polite">Copier</button>
+                </div>
+                <pre><code id="src" data-lang="python">import heapq, json, sys
+
+class Node:
+    def __init__(self, value, freq, c_l, c_r):
+        self.value = value
+        self.freq = freq
+        self.c_l = c_l
+        self.c_r = c_r
+
+    def __lt__(self, other):
+        return self.freq &lt; other.freq
+
+def count_occ(text):
+    dic = {}
+    for c in text:
+        if c not in dic:
+            dic[c] = 1
+        else:
+            dic[c] += 1
+    return dic
+
+
+def dic_to_heap(dic):
+    heap = []
+    for k in dic:
+        node = Node(k, dic[k], None, None)
+        heap.append(node)
+    heapq.heapify(heap)
+    return heap
+
+def dfs_binary(node, pre, dic):
+    if node.value is not None:
+        dic[node.value] = pre or "0"  # "0" si l'arbre n'a qu'une feuille
+    else:
+        l_pre = pre + "0"
+        r_pre = pre + "1"
+        dfs_binary(node.c_l, l_pre, dic)
+        dfs_binary(node.c_r, r_pre, dic)
+
+def huffman(file):
+    with open(file, 'rb') as f:
+        data = f.read()
+        heap_occ = dic_to_heap(count_occ(data))
+        while len(heap_occ) &gt; 1:
+            left = heapq.heappop(heap_occ)
+            right = heapq.heappop(heap_occ)
+            parent = Node(None, left.freq+right.freq, left, right)
+            heapq.heappush(heap_occ, parent)
+        huffman_code = {}
+        if heap_occ:  # fichier vide : pas d'arbre
+            dfs_binary(heap_occ[0], "", huffman_code)
+        current_octet = 0
+        byte = bytearray()
+        cpt_bytes = 0
+        for c in data:
+            code = huffman_code[c]
+            for bit in code:
+                current_octet &lt;&lt;= 1
+                if bit == '1':
+                    current_octet |= 1
+                cpt_bytes +=1
+
+                if cpt_bytes == 8:
+                    byte.append(current_octet)
+                    current_octet = 0
+                    cpt_bytes = 0
+        padding_length =0
+        if cpt_bytes &gt; 0 :
+            padding_length = 8 - cpt_bytes
+            current_octet &lt;&lt;= padding_length
+            byte.append(current_octet)
+        huffman_code["_PADDING_"] = padding_length
+        json_dic = json.dumps(huffman_code)
+
+        with open(file + ".huff", 'wb') as o:
+            o.write(json_dic.encode("utf-8"))
+            o.write(b'\n')
+            o.write(byte)
+
+
+def decompress(huff_file) :
+    with open(huff_file, 'rb') as inp:
+        header_str = inp.readline().decode('utf-8')
+        header_dic = json.loads(header_str)
+        padding = header_dic.pop("_PADDING_")
+        inversed_dico = {valeur: int(cle) for cle, valeur in header_dic.items()}
+        texte = ""
+        data = inp.read()
+        for octet in data:
+            octet_trad = f"{octet:08b}"
+            texte += octet_trad
+        if padding &gt; 0:
+            texte = texte[:-padding] #enleve les zéros artificiels
+        byte = bytearray()
+        tamp = ""
+        for bit in texte:
+            tamp += bit
+            if tamp in inversed_dico:
+                byte.append(inversed_dico[tamp])
+                tamp = ""
+
+        output_name = huff_file.replace(".huff", "_restaure")
+        with open(output_name, 'wb') as out:
+            out.write(byte)
+
+
+if __name__ == "__main__":
+    if len(sys.argv) &lt; 3:
+        print("Utilisation : python3 compress.py &lt;c ou d&gt; &lt;nom_du_fichier&gt;")
+    else:
+        fichier = sys.argv[2]
+        action = sys.argv[1]
+
+        if action == "c":
+            if not fichier.endswith(".huff"):
+                huffman(fichier)
+                print("Compression terminée.")
+            else:
+                print("Le fichier est déjà compressé (.huff).")
+
+        elif action == "d":
+            if fichier.endswith(".huff"):
+                decompress(fichier)
+                print("Décompression terminée.")
+            else:
+                print("Fichier non compressé ou extension invalide (attendue: .huff).")
+
+        else:
+            print("Mauvais paramètre : entrez c pour compresser ou d pour décompresser.")</code></pre>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="highlight.js"></script>
+</body>
+</html>

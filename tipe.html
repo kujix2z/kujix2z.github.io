@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0b0912">
+    <meta name="description" content="Générateur de colloscope pour la CPGE : modélisation SAT des contraintes et solveur DPLL écrit en OCaml.">
+    <title>Générateur de colloscope | Portfolio : Kuji</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="bg-glow"></div>
+    <nav>
+        <div class="nav-content">
+            <a class="logo" href="index.html">Kuji<span class="us">_</span></a>
+            <div class="links">
+                <a href="index.html">Accueil</a>
+                <a href="index.html#projets">Projets</a>
+                <a href="index.html#contact">Contact</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="project-page">
+
+        <header class="page-head">
+            <p class="line"><span class="prompt">kuji@portfolio<span class="sep">:~/projets$</span></span> <span class="cmd">cat tipe.md<span class="cursor" aria-hidden="true"></span></span></p>
+            <h1>Générateur de colloscope via SAT Solver</h1>
+            <p class="lead">Construction automatique d'un planning de colles en prépa : les contraintes d'emploi du temps sont traduites en formule logique, puis résolues par un solveur SAT écrit de zéro en OCaml.</p>
+            <div class="tags">
+                <span class="tag">OCaml</span>
+                <span class="tag">SAT Solver</span>
+                <span class="tag">Python</span>
+            </div>
+        </header>
+
+        <section class="doc-section">
+            <h2>Source</h2>
+            <a href="https://github.com/kujix2z/TIPE">Lien vers le repo GitHub</a>
+
+            <h2>Le problème</h2>
+            <p>Un colloscope répartit les groupes d'étudiants sur les créneaux de colle de chaque colleur. Il doit respecter un ensemble de contraintes croisées : un colleur ne peut interroger qu'un seul groupe à la fois, un groupe ne peut pas être à deux endroits au même moment, et chaque groupe doit passer dans chaque matière sur la période. Fait à la main, l'exercice demande plusieurs heures et le moindre changement de disponibilité oblige à tout reprendre.</p>
+            <p>Plutôt que d'écrire un algorithme spécifique au colloscope, le projet ramène le problème à <strong>SAT</strong> : trouver une affectation de valeurs vrai/faux qui satisfait une formule booléenne. Le planning n'est alors plus qu'une lecture de la solution renvoyée par le solveur.</p>
+        </section>
+
+        <section class="doc-section">
+            <h2>Modélisation</h2>
+            <p>À chaque combinaison possible correspond une variable booléenne : <code class="inline">x(g, c, h)</code> vaut vrai si le groupe <em>g</em> est interrogé par le colleur <em>c</em> au créneau <em>h</em>. La formule est écrite sous forme normale conjonctive (une conjonction de clauses, chaque clause étant une disjonction de littéraux), format attendu par le solveur.</p>
+            <ol class="steps">
+                <li><strong>Existence.</strong> Chaque groupe doit avoir une colle dans chaque matière : une clause qui liste toutes les variables acceptables pour ce couple groupe/matière.</li>
+                <li><strong>Unicité.</strong> Deux variables ne peuvent pas être vraies en même temps si elles occupent le même colleur au même créneau, ou le même groupe au même créneau. Cela s'écrit comme un ensemble de clauses à deux littéraux négatifs, de la forme <code class="inline">¬a ∨ ¬b</code>.</li>
+                <li><strong>Disponibilités.</strong> Un colleur absent à un créneau élimine simplement les variables correspondantes : elles sont forcées à faux.</li>
+            </ol>
+            <p>Concrètement, une variable est un entier : <code class="inline">3</code> désigne la variable numéro 3, et <code class="inline">-3</code> sa négation. Une clause est une liste d'entiers, et la formule une liste de clauses.</p>
+            <pre class="snippet"><code>type variable = int
+type fnc_t = variable list list      (* [[1; -2]; [2; 3]] = (x1 ∨ ¬x2) ∧ (x2 ∨ x3) *)
+type solution_t = variable array     (* 1 = vrai, -1 = faux, 0 = non affectée *)</code></pre>
+            <p class="caption">Le tableau solution est indexé par le numéro de variable ; la case 0 n'est jamais utilisée.</p>
+        </section>
+
+        <section class="doc-section">
+            <h2>Le solveur (DPLL)</h2>
+            <p>Le solveur suit l'algorithme DPLL : un parcours en profondeur de l'espace des affectations, allégé à chaque étape par des simplifications logiques.</p>
+            <ol class="steps">
+                <li><strong>Propagation unitaire.</strong> <code class="inline">var_clause_uni</code> cherche une clause réduite à un seul littéral. Cette clause ne laisse aucun choix : la variable est affectée immédiatement.</li>
+                <li><strong>Simplification.</strong> <code class="inline">remove_clause_with_known_uni</code> propage cette valeur : toute clause contenant le littéral est déjà satisfaite et disparaît, et le littéral opposé est retiré des clauses restantes. Si une clause se vide, c'est une contradiction et <code class="inline">Unsatisfiable</code> est levée.</li>
+                <li><strong>Pari.</strong> S'il ne reste aucune clause unitaire, <code class="inline">choose_var</code> prend la première variable encore libre et le solveur la suppose vraie, avant de relancer la propagation.</li>
+                <li><strong>Retour arrière.</strong> Si cette branche échoue, l'exception est rattrapée et la variable est réessayée à faux sur une copie propre du tableau solution. Si les deux branches échouent, l'échec remonte d'un niveau.</li>
+            </ol>
+            <p>L'arrêt se fait dans les deux sens : plus aucune clause à satisfaire, et la solution courante est renvoyée ; une clause vide, et la formule est insatisfiable. Ce dernier cas est informatif en pratique : il signifie que les disponibilités fournies ne permettent tout simplement pas de construire un colloscope valide.</p>
+        </section>
+
+        <section class="doc-section">
+            <h2>Chaîne complète</h2>
+            <p>Le solveur n'est qu'un maillon. Le programme lit un CSV de disponibilités (créneau, nom du colleur, matière), le traduit en formule, résout, puis reconstruit un planning lisible.</p>
+            <ol class="steps">
+                <li><strong><code class="inline">input.ml</code></strong> analyse le CSV : liste des colleurs sans doublon (les noms sont normalisés pour que « M. Dupont » et « M.Dupont » ne comptent qu'une fois), liste des créneaux, matière de chaque colleur, et pour chaque colleur la liste des créneaux où il est disponible.</li>
+                <li><strong><code class="inline">Properly_sat.ml</code></strong> contient le solveur et renvoie le tableau des variables affectées.</li>
+                <li><strong><code class="inline">output.ml</code></strong> relit ce tableau et remet les indices sous forme de noms, d'horaires et de groupes.</li>
+                <li><strong><code class="inline">colloscope_generator.py</code></strong> fournit l'interface : choix du fichier, lancement du moteur OCaml compilé, puis export en <code class="inline">.xlsx</code> avec un code couleur par groupe.</li>
+            </ol>
+        </section>
+
+        <section class="doc-section">
+            <h2>Utilisation</h2>
+            <pre class="snippet"><code><span class="sn-c"># Compilation du moteur OCaml</span>
+<span class="sn-p">$</span> ocamlfind ocamlopt -o colloscope -linkpkg -package csv,unix \
+      Properly_sat.ml input.ml output.ml final_input_version.ml
+
+<span class="sn-c"># Interface graphique (Python 3.10+, environnement virtuel conseillé)</span>
+<span class="sn-p">$</span> pip install pandas customtkinter xlsxwriter pyinstaller
+<span class="sn-p">$</span> python3 colloscope_generator.py</code></pre>
+            <p class="caption">Le CSV d'entrée attend trois colonnes : horaire, nom du colleur, matière. Le calcul prend de 10 secondes à 1 minute selon la taille du problème.</p>
+            <p>Le code complet est sur <a class="text-link" href="https://github.com/kujix2z/TIPE">GitHub</a>.</p>
+        </section>
+
+        <section class="doc-section">
+            <h2>Code source</h2>
+            <div class="code-window">
+                <div class="code-bar">
+                    <span class="code-file">Properly_sat.ml</span>
+                    <button class="copy-btn" id="copy" type="button" aria-live="polite">Copier</button>
+                </div>
+                <pre><code id="src" data-lang="ocaml">type variable = int
+type solution_t = variable array
+type fnc_t = variable list list
+
+exception Unsatisfiable
+exception Satisfiable
+
+let rec empty_in (fnc : fnc_t) =
+  match fnc with
+  | [] -&gt; false
+  | h :: t when h = [] -&gt; true
+  | h :: t -&gt; empty_in t
+
+let choose_var (fnc : fnc_t) (solution : solution_t) =
+  (* Search the unassigned variable *)
+  let rec find_var_in_clauses = function
+    | [] -&gt; raise Unsatisfiable
+    | clause :: rest -&gt;
+      match List.find_opt (fun x -&gt; solution.(abs x) = 0) clause with
+      | Some v -&gt; abs v
+      | None -&gt; find_var_in_clauses rest
+  in
+  find_var_in_clauses fnc
+
+let var_clause_uni (fnc : fnc_t) =
+  let rec find_uni = function
+    | [] -&gt; 0
+    | clause :: rest -&gt;
+      match clause with
+      | [x] -&gt; x
+      | _ -&gt; find_uni rest
+  in
+  find_uni fnc
+
+let abs (x : variable) =   (* return the absolute value of x *)
+  if x &lt; 0 then (-x)
+  else x
+
+let rec list_parcours (l : variable list) (x : variable) =
+  (* parcours of the fnc, if x is in the clause, then return true. *)
+  match l with
+  | [] -&gt; false
+  | h :: t when h = x || h = -x -&gt; true
+  | _ :: t -&gt; list_parcours t x
+
+let rec remove_clause_with_known_uni (fnc : fnc_t) (x : variable) =
+  (* Remove all clauses where x is in it, and delete -x from all other clauses. *)
+  match fnc with
+  | [] -&gt; []
+  | clause :: rest -&gt;
+    if List.exists (fun lit -&gt; lit = x) clause then
+      remove_clause_with_known_uni rest x
+    else
+      let cleaned_clause = List.filter (fun lit -&gt; lit &lt;&gt; -x) clause in
+      if cleaned_clause = [] then
+        raise Unsatisfiable
+      else
+        cleaned_clause :: remove_clause_with_known_uni rest x
+
+let simplify_clause_uni (fnc : fnc_t) (sol : solution_t) =
+  (* remove all the unit clause and set the value of each variable of those unit clause *)
+  let var = var_clause_uni fnc in
+  let new_fnc = ref [] in
+  if (var != 0) then begin
+    sol.(abs var) &lt;- var ;
+    new_fnc := (remove_clause_with_known_uni fnc var)
+  end else
+    new_fnc := fnc;
+  !new_fnc
+
+let rec simplify_all_unit_clauses (fnc : fnc_t) (sol : solution_t) =
+  let var = var_clause_uni fnc in
+  if var != 0 then
+    let new_fnc = remove_clause_with_known_uni fnc var in
+    sol.(abs var) &lt;- if var &gt; 0 then 1 else -1;   (* Set 1 for true, -1 for false *)
+    simplify_all_unit_clauses new_fnc sol          (* Continue until there is no more unit clauses left *)
+  else
+    fnc
+
+let get_max_var_index (fnc : fnc_t) =
+  fnc
+  |&gt; List.flatten              (* concatenate all clauses in one *)
+  |&gt; List.map abs              (* apply the absolute value on each variable *)
+  |&gt; List.fold_left max 0      (* find the maximum value in the list *)
+
+(* return sol in which the value at the index 0 is always 0,
+   because the variable 0 is never used in propositional logic *)
+let simplify_fnc (fnc : fnc_t) =
+  if empty_in fnc then raise Unsatisfiable;
+  let max_idx = get_max_var_index fnc in
+  let sol_init = Array.make (max_idx + 1) 0 in
+
+  (* Initial unit propagation *)
+  let cleaned_fnc = simplify_all_unit_clauses fnc sol_init in
+
+  let rec solve current_fnc current_sol =
+    (* VICTORY CASE: No more clauses to fulfill *)
+    if current_fnc = [] then
+      current_sol
+    (* DEFEATED CASE: An empty clause (contradiction) has been generated. *)
+    else if empty_in current_fnc then
+      raise Unsatisfiable
+    else
+      let x =
+        try choose_var current_fnc current_sol
+        with Unsatisfiable -&gt; raise Unsatisfiable
+      in
+      try
+        let sol_vrai = Array.copy current_sol in
+        sol_vrai.(x) &lt;- 1;
+        let next = remove_clause_with_known_uni current_fnc x in
+        let simplified = simplify_all_unit_clauses next sol_vrai in
+        solve simplified sol_vrai
+      with Unsatisfiable -&gt;
+        (* backtracking *)
+        let sol_faux = Array.copy current_sol in
+        sol_faux.(x) &lt;- -1;
+        let next = remove_clause_with_known_uni current_fnc (-x) in
+        let simplified = simplify_all_unit_clauses next sol_faux in
+        solve simplified sol_faux
+  in
+  solve cleaned_fnc sol_init</code></pre>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="highlight.js"></script>
+</body>
+</html>

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0b0912">
+    <meta name="description" content="Portfolio de Kuji : Étudiant à Télécom Nancy en Cybersécurité.">
+    <title>Portfolio : Kuji</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="bg-glow"></div>
+
+    <nav>
+        <div class="nav-content">
+            <span class="logo">Kuji<span class="us">_</span></span>
+            <div class="links">
+                <a href="#">Accueil</a>
+                <a href="#projets">Projets</a>
+                <a href="#contact">Contact</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <header class="hero">
+            <div class="terminal">
+                <div class="term-bar">
+                    <span class="term-dot"></span>
+                    <span class="term-dot"></span>
+                    <span class="term-dot"></span>
+                    <span class="term-title">kuji@portfolio: ~</span>
+                </div>
+                <div class="term-body">
+                    <p class="line"><span class="prompt">kuji@portfolio<span class="sep">:~$</span></span> <span class="cmd" data-type data-speed="80" data-pause="450">whoami</span></p>
+                    <h1 data-type data-speed="45" data-pause="200">Portfolio</h1>
+                    <p class="out" data-type data-speed="16" data-pause="600">Étudiant à Télécom Nancy en Cybersécurité.</p>
+                    <p class="line"><span class="prompt">kuji@portfolio<span class="sep">:~$</span></span> <span class="cmd" data-type data-speed="70">ls projets/</span></p>
+                </div>
+            </div>
+        </header>
+
+        <!-- Projets -->
+        <section id="projets" class="projects-stack">
+            <h2>Mes projets</h2>
+
+            <a href="huffman.html" class="bubble">
+                <article>
+                    <h3>Compresseur Huffman</h3>
+                    <p>Création d'un outil de compression/décompression sans perte en Python, basé sur les arbres binaires et la manipulation de bits.</p>
+                    <span class="tag">Python</span>
+                    <span class="tag">Algorithmique</span>
+                </article>
+            </a>
+
+            <!-- Projet à plusieurs versions -->
+            <details class="bubble bubble-group" id="scanneur">
+                <summary>
+                    <h3>Scanneur de port</h3>
+                    <span class="group-desc">Développement d'un scanner TCP en C, en trois versions successives : séquentiel, puis multithread avec un nombre de threads fixe, puis configurable.</span>
+                    <span class="group-foot">
+                        <span class="group-tags">
+                            <span class="tag">C</span>
+                            <span class="tag">Réseau</span>
+                            <span class="tag">Threads</span>
+                        </span>
+                        <span class="group-toggle">
+                            <span class="toggle-closed">Voir les 3 versions</span>
+                            <span class="toggle-open">Masquer les versions</span>
+                        </span>
+                    </span>
+                </summary>
+                <div class="versions-list">
+                    <a href="portscan-v1.html" class="version-item">
+                        <span class="version-name">v1 séquentiel</span>
+                        <span class="version-desc">Les ports sont testés un par un, avec des connexions non bloquantes et un timeout de 2 s.</span>
+                    </a>
+                    <a href="portscan-v2.html" class="version-item">
+                        <span class="version-name">v2 5 threads</span>
+                        <span class="version-desc">Cinq threads se partagent les ports grâce à un mutex, avec un timeout ramené à 200 ms.</span>
+                    </a>
+                    <a href="portscan-v3.html" class="version-item">
+                        <span class="version-name">v3 multithread</span>
+                        <span class="version-desc">Le nombre de threads devient un paramètre de la ligne de commande.</span>
+                    </a>
+                </div>
+            </details>
+
+            <a href="tipe.html" class="bubble">
+                <article>
+                    <h3>Générateur de colloscope (prépa)</h3>
+                    <p>Développement d'un générateur de colloscope via un SAT Solver.</p>
+                    <span class="tag">OCaml</span>
+                    <span class="tag">SAT Solver</span>
+                </article>
+            </a>
+        </section>
+
+        <!-- Contact : remplace les 3 href ci-dessous par tes vraies URL / adresse -->
+        <section id="contact" class="contact">
+            <h2>Contact</h2>
+            <div class="contact-list">
+                <a class="contact-item" href="https://github.com/kujix2z" target="_blank" rel="noopener">
+                    <span class="prompt">$</span> open github
+                </a>
+                <a class="contact-item" href="https://www.linkedin.com/in/clovis-ricouart-0735943a5" target="_blank" rel="noopener">
+                    <span class="prompt">$</span> open linkedin
+                </a>
+                <a class="contact-item" href="mailto:ricouartclovis@gmail.com">
+                    <span class="prompt">$</span> mail kuji
+                </a>
+            </div>
+        </section>
+    </main>
+
+    <script>
+    (function () {
+        var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        var els = Array.prototype.slice.call(document.querySelectorAll('[data-type]'));
+        if (!els.length) return;
+
+        var cursor = document.createElement('span');
+        cursor.className = 'cursor';
+        cursor.setAttribute('aria-hidden', 'true');
+
+        var steps = els.map(function (el) {
+            var text = el.textContent;
+            var holder = el.closest('.line') || el;
+            var wrap = document.createElement('span');
+            wrap.setAttribute('aria-hidden', 'true');
+            var chars = text.split('').map(function (c) {
+                var s = document.createElement('span');
+                s.className = 'ch';
+                s.textContent = c;
+                wrap.appendChild(s);
+                return s;
+            });
+            var sr = document.createElement('span');
+            sr.className = 'sr-only';
+            sr.textContent = text;
+            el.textContent = '';
+            el.appendChild(sr);
+            el.appendChild(wrap);
+            if (!reduce) holder.classList.add('pending');
+            return {
+                wrap: wrap,
+                chars: chars,
+                holder: holder,
+                speed: parseInt(el.dataset.speed, 10) || 40,
+                pause: parseInt(el.dataset.pause, 10) || 0
+            };
+        });
+
+        function place(step, i) {
+            step.wrap.insertBefore(cursor, step.chars[i] || null);
+        }
+
+        if (reduce) {
+            steps.forEach(function (st) {
+                st.chars.forEach(function (c) { c.classList.add('on'); });
+            });
+            place(steps[steps.length - 1], steps[steps.length - 1].chars.length);
+            return;
+        }
+
+        var s = 0, c = 0;
+        steps[0].holder.classList.remove('pending');
+        place(steps[0], 0);
+
+        function next() {
+            if (s >= steps.length) { cursor.classList.remove('busy'); return; }
+            var st = steps[s];
+            if (c === 0) {
+                st.holder.classList.remove('pending');
+                place(st, 0);
+                cursor.classList.add('busy');
+            }
+            if (c < st.chars.length) {
+                st.chars[c].classList.add('on');
+                c++;
+                place(st, c);
+                setTimeout(next, st.speed);
+            } else {
+                cursor.classList.remove('busy');
+                s++;
+                c = 0;
+                setTimeout(next, st.pause);
+            }
+        }
+
+        setTimeout(next, 600);
+    })();
+    </script>
+</body>
+</html>
