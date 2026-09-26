@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0b0912">
+    <meta name="description" content="Bot Discord en Python qui compare l'emploi du temps de Télécom Nancy à intervalles réguliers et notifie tout changement.">
+    <title>Bot Discord | Portfolio : Kuji</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="bg-glow"></div>
+
+    <nav>
+        <div class="nav-content">
+            <a class="logo" href="index.html">Kuji<span class="us">_</span></a>
+            <div class="links">
+                <a href="index.html">Accueil</a>
+                <a href="index.html#projets">Projets</a>
+                <a href="index.html#contact">Contact</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="project-page">
+
+        <header class="page-head">
+            <p class="line"><span class="prompt">kuji@portfolio<span class="sep">:~/projets$</span></span> <span class="cmd">cat bot_discord.md<span class="cursor" aria-hidden="true"></span></span></p>
+            <h1>Bot Discord</h1>
+            <p class="lead">Bot qui compare l'emploi du temps de Télécom Nancy à intervalles réguliers et envoie une notification Discord au moindre changement.</p>
+            <div class="tags">
+                <span class="tag">Python</span>
+                <span class="tag">API</span>
+            </div>
+        </header>
+
+        <section class="doc-section">
+            <h2>Pourquoi ce projet</h2>
+            <p>Il n'y avait pas d'application pratique pour regarder l'emploi du temps à Télécom Nancy, seulement un site. Je n'avais aucun moyen de savoir quand il y avait un changement dans mon emploi du temps. J'ai donc cherché le moyen le plus simple pour me faire notifier de tout changement : Discord.</p>
+        </section>
+
+        <!-- Remplace par le lien vers ton repo -->
+        <section class="doc-section">
+            <h2>Source</h2>
+            <a href="https://github.com/kujix2z/TON_REPO">Lien vers le repo GitHub</a>
+            <h2>Principe</h2>
+            <p>Le script ne se connecte à aucune API Télécom Nancy à proprement parler : il télécharge simplement le fichier <code class="inline">.ics</code> public que l'école publie pour l'import dans un calendrier, et le compare à sa propre sauvegarde de la veille.</p>
+            <ol class="steps">
+                <li><strong>Téléchargement et parsing.</strong> <code class="inline">requests.get</code> récupère le <code class="inline">.ics</code>, et la bibliothèque <code class="inline">ics</code> le transforme en une liste d'évènements exploitables en Python.</li>
+                <li><strong>Un identifiant par cours.</strong> Chaque évènement devient une chaîne <code class="inline">"Nom - date de HH:mm à HH:mm"</code>, rassemblée dans un <code class="inline">set</code>. Cette chaîne sert à la fois d'affichage et de clé de comparaison : deux cours sont « identiques » seulement si leur nom, leur date et leurs deux horaires correspondent exactement.</li>
+                <li><strong>Comparaison à la mémoire.</strong> L'état de la veille est relu depuis <code class="inline">memoire.json</code>. La différence entre deux <code class="inline">set</code> (<code class="inline">-</code>) donne directement les cours apparus et les cours disparus, sans avoir à comparer les évènements un par un.</li>
+                <li><strong>Notification et sauvegarde.</strong> S'il y a une différence, un embed Discord est envoyé via le webhook, puis le nouvel état écrase <code class="inline">memoire.json</code> pour la comparaison suivante.</li>
+            </ol>
+            <p>Une conséquence de cette façon de comparer, que j'ai vérifiée en le testant avec un faux emploi du temps : un cours simplement déplacé n'est pas détecté comme « modifié », il apparaît comme deux évènements distincts, puisque son horaire fait partie de sa clé. Il ressort à la fois dans les annulés (son ancien horaire) et dans les ajoutés (son nouvel horaire), ce que les deux champs de l'embed, « Ajouté ou Déplacé » et « Annulé ou Ancien horaire », annoncent déjà.</p>
+        </section>
+
+        <section class="doc-section">
+            <h2>Le détail qui fait tenir le tri</h2>
+            <p><code class="inline">tri_chrono</code> reconstruit, à partir de la chaîne d'affichage, une chaîne de la forme <code class="inline">AAAAMMJJHH:mm</code> : une date écrite dans cet ordre se trie alphabétiquement exactement comme elle se trierait chronologiquement. Sans ça, les cours s'afficheraient dans l'ordre où <code class="inline">set</code> les range en interne, c'est-à-dire arbitraire.</p>
+            <p class="caption">Testé sur un changement d'année : un 01/09/2026, un 20/12/2026 et un 05/01/2027 ressortent bien dans cet ordre malgré le changement d'année.</p>
+        </section>
+
+        <section class="doc-section">
+            <h2>Sécurité : le webhook ne doit jamais apparaître dans le code</h2>
+            <p>Un webhook Discord est un secret : quiconque possède son URL peut poster dans le salon visé, sans avoir besoin d'un compte ni d'une invitation sur le serveur. L'écrire en dur dans le script, comme <code class="inline">url_webhook = "https://discord.com/api/webhooks/…"</code>, revient à le rendre public dès que le code est mis sur GitHub, même sur un dépôt qu'on croit anodin.</p>
+            <p>La pratique standard est de le sortir du code, par exemple via une variable d'environnement (<code class="inline">os.environ</code>), et de ne jamais committer le fichier qui la définit (un <code class="inline">.env</code> ajouté au <code class="inline">.gitignore</code>). C'est ce que fait la version ci-dessous.</p>
+        </section>
+
+        <section class="doc-section">
+            <h2>Limites</h2>
+            <ul class="steps">
+                <li>Le script doit être relancé à intervalles réguliers pour détecter un changement : il ne surveille rien en continu par lui-même. Une tâche planifiée (cron, ou équivalent) est nécessaire autour de lui. C'est ce que j'ai fait sur un vieux PC qui me sert de DIY NAS.</li>
+                <li>Aucune gestion d'erreur autour de la requête réseau ou du parsing : si le site de l'école est indisponible ou renvoie un fichier inattendu, le script s'arrête sans notifier personne de l'échec.</li>
+                <li>Discord limite la valeur d'un champ d'embed à 1024 caractères ; le script coupe à 1000 avec <code class="inline">[:1000]</code>. En cas de changement massif (par exemple un nouveau semestre où tout bouge d'un coup), une partie de la liste peut être tronquée silencieusement, ce qui est d'une probabilité quasi nulle, donc implémenter une solution ne servirait pas à grand chose.</li>
+            </ul>
+        </section>
+
+        <section class="doc-section">
+            <h2>Code source</h2>
+            <div class="code-window">
+                <div class="code-bar">
+                    <span class="code-file">auto_cal_nas.py</span>
+                    <button class="copy-btn" id="copy" type="button" aria-live="polite">Copier</button>
+                </div>
+                <pre><code id="src" data-lang="python">import requests
+import json
+import os
+from ics import Calendar
+
+url_ics = "https://edt.telecomnancy.univ-lorraine.fr/static/fise_1a_fisea.ics"
+url_webhook = os.environ["DISCORD_WEBHOOK_URL"]  # jamais en dur : voir la section Sécurité
+
+# --- FONCTION DE TRI (AVEC HEURE DE FIN) ---
+def tri_chrono(cours_str):
+    # Extrait "12/09/2026 de 08:00 à 10:00"
+    date_bloc = cours_str.rsplit(" - ", 1)[-1]
+
+    # Sépare la date et le bloc des heures
+    date_part, heures_part = date_bloc.split(" de ")
+    # Extrait juste l'heure de début (avant le " à ")
+    h_debut = heures_part.split(" à ")[0]
+
+    jour, mois, annee = date_part.split("/")
+    return f"{annee}{mois}{jour}{h_debut}"
+
+# 1. Récupération et formatage
+response = requests.get(url_ics)
+# LE CORRECTIF DES ACCENTS EST ICI : on force l'UTF-8 au téléchargement
+response.encoding = 'utf-8'
+cal = Calendar(response.text)
+
+cours_act = set()
+
+for event in cal.events:
+    debut = event.begin.to('Europe/Paris')
+    fin = event.end.to('Europe/Paris')
+
+    date_str = debut.format('DD/MM/YYYY')
+    h_debut = debut.format('HH:mm')
+    h_fin = fin.format('HH:mm')
+
+    # Nouveau format : "Cours - DD/MM/YYYY de HH:mm à HH:mm"
+    cours_act.add(f"{event.name} - {date_str} de {h_debut} à {h_fin}")
+
+old_cours = set()
+premier_lancement = True
+
+# 2. Lecture de la mémoire
+if os.path.exists("memoire.json"):
+    premier_lancement = False
+    with open("memoire.json", "r", encoding="utf-8") as f:
+        old_cours = set(json.load(f))
+
+cours_ajoutes = cours_act - old_cours
+cours_annules = old_cours - cours_act
+
+# 3. Envoi à Discord
+if not premier_lancement and (cours_ajoutes or cours_annules):
+
+    embed = {
+        "title": "🚨 Mise à jour de l'emploi du temps !",
+        "color": 16753920,
+        "fields": []
+    }
+
+    if cours_ajoutes:
+        cours_ajoutes_tries = sorted(cours_ajoutes, key=tri_chrono)
+        texte_ajouts = "\n".join(cours_ajoutes_tries)[:1000]
+        embed["fields"].append({
+            "name": "✅ Ajouté ou Déplacé",
+            "value": texte_ajouts,
+            "inline": False
+        })
+
+    if cours_annules:
+        cours_annules_tries = sorted(cours_annules, key=tri_chrono)
+        texte_annules = "\n".join(cours_annules_tries)[:1000]
+        embed["fields"].append({
+            "name": "❌ Annulé ou Ancien horaire",
+            "value": texte_annules,
+            "inline": False
+        })
+
+    requests.post(url_webhook, json={"embeds": [embed]})
+
+# 4. Sauvegarde
+# Le tri fonctionnera maintenant parfaitement sur toute l'année scolaire
+cours_sauvegarde_tries = sorted(cours_act, key=tri_chrono)
+with open("memoire.json", "w", encoding="utf-8") as f:
+    json.dump(cours_sauvegarde_tries, f, ensure_ascii=False, indent=4)</code></pre>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="highlight.js"></script>
+</body>
+</html>
