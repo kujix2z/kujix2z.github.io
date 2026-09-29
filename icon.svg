@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <!-- Dégradé moderne : du violet très clair/vif au violet profond -->
+    <linearGradient id="techGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e879f9" />
+      <stop offset="100%" stop-color="#7e22ce" />
+    </linearGradient>
+    
+    <!-- Ombre colorée très subtile (plus propre qu'un filtre néon) -->
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#a855f7" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+  
+  <!-- Fond du thème -->
+  <rect width="100" height="100" rx="22" fill="#0b0912" />
+  
+  <!-- Le K : massif, géométrique, avec une branche détachée -->
+  <path d="M 32 24 L 32 76 M 68 24 L 44 50 L 68 76"
+        stroke="url(#techGrad)" 
+        stroke-width="16" 
+        stroke-linecap="square" 
+        stroke-linejoin="miter"
+        fill="none" 
+        filter="url(#softGlow)" />
+</svg>
