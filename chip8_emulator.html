@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0b0912">
+    <meta name="description" content="Développement from scratch d'un émulateur CHIP-8 en C avec SDL2.">
+    <title>Émulateur CHIP-8 | Portfolio : Kuji</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+    <div class="bg-glow"></div>
+
+    <nav>
+        <div class="nav-content">
+            <a class="logo" href="index.html">Kuji<span class="us">_</span></a>
+            <div class="links">
+                <a href="index.html">Accueil</a>
+                <a href="index.html#projets">Projets</a>
+                <a href="index.html#contact">Contact</a>
+            </div>
+        </div>
+    </nav>
+
+    <main class="project-page">
+
+        <header class="page-head">
+            <p class="line"><span class="prompt">kuji@portfolio<span class="sep">:~/projets$</span></span> <span class="cmd">cat chip8.md<span class="cursor" aria-hidden="true"></span></span></p>
+            <h1>Émulateur CHIP-8 en C</h1>
+            <p class="lead">Développement from scratch d'un émulateur de console rétro, basé sur la manipulation de bits et la librairie SDL2.</p>
+            <div class="tags">
+                <span class="tag">C</span>
+                <span class="tag">Bas niveau</span>
+                <span class="tag">SDL2</span>
+            </div>
+        </header>
+
+        <section class="doc-section">
+            <h2>Pourquoi ce projet</h2>
+            <p>Je voulais un projet un peu plus concret avec un vrai rendu visuel. Faire un émulateur from scratch en C, c'était le bon prétexte pour m'entraîner à fond sur la manipulation bit à bit tout en comprenant vraiment comment un processeur fonctionne.</p>
+        </section>
+
+        <section class="doc-section">
+            <h2>Source</h2>
+            <a href="https://github.com/kujix2z/chip8_emulator_c">Lien vers le repo GitHub</a>
+            
+            <h2>Architecture et Fonctionnement</h2>
+            <p>Le CHIP-8 est un langage interprété conçu dans les années 70. Mon émulateur recrée virtuellement les composants physiques de la machine de l'époque :</p>
+            <ol class="steps">
+                <li><strong>Le CPU et la Mémoire :</strong> L'émulateur possède 4096 octets de mémoire (RAM), 16 registres de 8 bits (V0 à VF), une pile d'appels (Stack) de 16 niveaux et un registre d'adresse (I).</li>
+                <li><strong>Le cycle "Fetch-Decode-Execute" :</strong> Dans la boucle principale, l'émulateur lit une instruction de 16 bits en mémoire, sépare ses différentes parties grâce à des masques binaires (ex: <code class="inline">opcode & 0xF000</code>), et exécute l'action correspondante (saut, addition, dessin...).</li>
+                <li><strong>Affichage et Rendu :</strong> L'écran d'origine fait 64x32 pixels monochromes. Les sprites sont dessinés grâce à une opération logique XOR (OU exclusif). J'ai utilisé <strong>SDL2</strong> pour générer la fenêtre et mettre les pixels à l'échelle pour les écrans modernes.</li>
+                <li><strong>Audio et Timers :</strong> Le processeur tourne très vite, mais les timers (délai et son) doivent être rafraîchis exactement 60 fois par seconde. J'ai configuré la boucle de rendu pour limiter la vitesse (60 FPS) et utilisé <code class="inline">SDL_Audio</code> pour générer dynamiquement une onde carrée (le fameux "bip" rétro).</li>
+            </ol>
+        </section>
+
+        <section class="doc-section">
+            <h2>Utilisation</h2>
+            <p>Le projet se compile avec GCC en liant la bibliothèque SDL2 :</p>
+            <pre class="snippet"><code><span class="sn-p">$</span> gcc chip8.c -o chip8 -lSDL2
+<span class="sn-c"># Lancement avec une ROM au choix (ex: Pong)</span>
+<span class="sn-p">$</span> ./chip8 Pong.ch8</code></pre>
+        </section>
+
+        <section class="doc-section">
+            <h2>Extrait du code source</h2>
+            <p>Voici un aperçu de la boucle principale du CPU. On y voit la phase de décodage avec les masques binaires, suivie de l'instruction <code>0xD</code> qui est le cœur graphique du CHIP-8 : elle lit un sprite en mémoire bit par bit et l'affiche à l'écran en utilisant un OU exclusif (XOR).</p>
+            <div class="code-window">
+                <div class="code-bar">
+                    <span class="code-file">chip8.c (Extrait)</span>
+                    <button class="copy-btn" id="copy" type="button" aria-live="polite">Copier</button>
+                </div>
+                <pre><code id="src" data-lang="c">            // Lecture de l'instruction sur 16 bits
+            uint16_t opcode = (chip.memory[chip.pc] << 8) | chip.memory[chip.pc + 1];
+            chip.pc += 2;
+            
+            // Phase de décodage (extraction via masques binaires)
+            uint16_t type = (opcode & 0xF000) >> 12;
+            uint16_t X    = (opcode & 0x0F00) >> 8; 
+            uint16_t Y    = (opcode & 0x00F0) >> 4; 
+            uint16_t N    = opcode & 0x000F;        
+            uint16_t NN   = opcode & 0x00FF;        
+            uint16_t NNN  = opcode & 0x0FFF;        
+
+            // Phase d'exécution
+            switch (type) {
+                // ... (autres instructions)
+
+                case 0xD: {
+                    // DXYN : Dessine un sprite de N lignes aux coordonnées (VX, VY)
+                    chip.V[0xF] = 0; // Réinitialise le flag de collision
+                    
+                    for (int i = 0; i < N; i++) {
+                        uint8_t sprite_byte = chip.memory[chip.I + i];
+                        
+                        for (int j = 0; j < 8; j++) {
+                            uint8_t x = (chip.V[X] + j) % 64;
+                            uint8_t y = (chip.V[Y] + i) % 32;
+                            
+                            // Isole le bit courant du sprite
+                            uint8_t sprite_pixel = sprite_byte & (0x80 >> j);
+                            
+                            if (sprite_pixel != 0) {
+                                // Si un pixel de l'écran est déjà allumé, il y a collision
+                                if (chip.screen[y][x] == 1) {
+                                    chip.V[0xF] = 1;
+                                }
+                                // XOR pour allumer/éteindre le pixel
+                                chip.screen[y][x] ^= 1;
+                            }
+                        }
+                    }
+                    break;
+                }
+                
+                // ... (suite du switch)
+            }</code></pre>
+            </div>
+        </section>  
+
+    </main>
+
+    <script src="highlight.js"></script>
+</body>
+</html>
